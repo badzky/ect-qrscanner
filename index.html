@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code Attendance System</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; background-color: #f4f4f9; }
+        h2 { color: #333; }
+        #reader { width: 320px; margin: auto; border: 2px solid #007bff; padding: 10px; background: white; border-radius: 8px; }
+        #status { font-size: 18px; margin-top: 10px; color: blue; font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; border-radius: 8px; overflow: hidden; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background-color: #007bff; color: white; }
+        button { margin: 10px; padding: 10px; font-size: 16px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        select { padding: 8px; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <h2>QR Code Attendance Scanner</h2>
+    <button onclick="startScanner()">Start Scanner</button>
+    <button onclick="stopScanner()">Stop Scanner</button>
+    <p id="status">Waiting for scan...</p>
+    <div id="reader"></div>
+    <label for="scanTime">Select Scan Time:</label>
+    <select id="scanTime">
+        <option value="09:00">9 AM</option>
+        <option value="13:00">1 PM</option>
+        <option value="19:00">7 PM</option>
+    </select>
+    <button onclick="downloadCSV()">Download CSV</button>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Student Number</th>
+                <th>Last Name</th>
+                <th>First Name</th>
+                <th>Unique Code</th>
+                <th>Scan Date & Time</th>
+            </tr>
+        </thead>
+        <tbody id="scannedData"></tbody>
+    </table>
+
+    <script>
+        let html5QrCode;
+        let scanningActive = false;
+        let scanData = JSON.parse(localStorage.getItem("scanData")) || [];
+        
+        const scanTimeRanges = {
+            "09:00": { start: "09:00", end: "10:30" },
+            "13:00": { start: "13:00", end: "14:30" },
+            "19:00": { start: "19:00", end: "20:30" }
+        };
+        
+        function isWithinTimeRange(selectedTime) {
+            const now = new Date();
+            const currentTime = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
+            const range = scanTimeRanges[selectedTime];
+            return currentTime >= range.start && currentTime <= range.end;
+        }
+
+        function onScanSuccess(decodedText) {
+            if (!scanningActive) return;
+
+            const selectedTime = document.getElementById("scanTime").value;
+            if (!isWithinTimeRange(selectedTime)) {
+                document.getElementById("status").textContent = "Scan not allowed outside the selected time range!";
+                document.getElementById("status").style.color = "red";
+                return;
+            }
+
+            console.log("QR Code Detected:", decodedText);
+            document.getElementById("status").textContent = "Processing scan...";
+            document.getElementById("status").style.color = "orange";
+
+            const data = decodedText.trim().split(",");
+            if (data.length < 4) {
+                document.getElementById("status").textContent = "Invalid QR Code!";
+                document.getElementById("status").style.color = "red";
+                return;
+            }
+
+            const studentNumber = data[0].trim();
+            const lastName = data[1].trim();
+            const firstName = data[2].trim();
+            const uniqueCode = data[3].trim();
+            const scanDateTime = new Date().toLocaleString();
+            
+            let studentRecord = scanData.find(record => record.uniqueCode === uniqueCode);
+            if (!studentRecord) {
+                studentRecord = { studentNumber, lastName, firstName, uniqueCode, scanDateTime };
+                scanData.push(studentRecord);
+                localStorage.setItem("scanData", JSON.stringify(scanData));
+            }
+
+            updateTable();
+
+            document.getElementById("status").textContent = "QR Code Scanned Successfully!";
+            document.getElementById("status").style.color = "green";
+        }
+
+        function startScanner() {
+            if (scanningActive) return;
+            scanningActive = true;
+            html5QrCode = new Html5Qrcode("reader");
+            html5QrCode.start(
+                { facingMode: "environment" },
+                { fps: 30, qrbox: { width: 300, height: 300 } },
+                onScanSuccess
+            ).catch(err => console.error("Scanner error:", err));
+        }
+
+        function stopScanner() {
+            if (html5QrCode) {
+                html5QrCode.stop().then(() => scanningActive = false);
+            }
+        }
+
+        function updateTable() {
+            const tableBody = document.getElementById("scannedData");
+            tableBody.innerHTML = "";
+            scanData.forEach(({ studentNumber, lastName, firstName, uniqueCode, scanDateTime }) => {
+                const row = `<tr>
+                    <td>${studentNumber}</td>
+                    <td>${lastName}</td>
+                    <td>${firstName}</td>
+                    <td>${uniqueCode}</td>
+                    <td>${scanDateTime}</td>
+                </tr>`;
+                tableBody.innerHTML += row;
+            });
+        }
+
+        function downloadCSV() {
+            let csvContent = "data:text/csv;charset=utf-8,Student Number,Last Name,First Name,Unique Code,Scan Date & Time\n";
+            scanData.forEach(({ studentNumber, lastName, firstName, uniqueCode, scanDateTime }) => {
+                csvContent += `${studentNumber},${lastName},${firstName},${uniqueCode},${scanDateTime}\n`;
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "attendance.csv");
+            document.body.appendChild(link);
+            link.click();
+        }
+
+        updateTable();
+    </script>
+</body>
+</html>
