@@ -36,10 +36,12 @@
         <thead>
             <tr>
                 <th>Student Number</th>
-                <th>Last Name</th>
-                <th>First Name</th>
+                <th>Full Name</th>
+                <th>Section</th>
                 <th>Unique Code</th>
-                <th>Scan Date & Time</th>
+                <th>Scan Date</th>
+                <th>Scan Time</th>
+                <th>Location</th>
             </tr>
         </thead>
         <tbody id="scannedData"></tbody>
@@ -49,16 +51,15 @@
         let html5QrCode;
         let scanningActive = false;
         let scanData = JSON.parse(localStorage.getItem("scanData")) || [];
-        
         const scanTimeRanges = {
             "09:00": { start: "09:00", end: "10:30" },
             "13:00": { start: "13:00", end: "14:30" },
-            "19:00": { start: "19:00", end: "20:30" }
+            "19:00": { start: "19:00", end: "23:30" }
         };
         
         function isWithinTimeRange(selectedTime) {
             const now = new Date();
-            const currentTime = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
+            const currentTime = now.toTimeString().slice(0, 5);
             const range = scanTimeRanges[selectedTime];
             return currentTime >= range.start && currentTime <= range.end;
         }
@@ -78,25 +79,28 @@
             document.getElementById("status").style.color = "orange";
 
             const data = decodedText.trim().split(",");
-            if (data.length < 4) {
+            if (data.length < 6) {
                 document.getElementById("status").textContent = "Invalid QR Code!";
                 document.getElementById("status").style.color = "red";
                 return;
             }
 
-            const studentNumber = data[0].trim();
-            const lastName = data[1].trim();
-            const firstName = data[2].trim();
-            const uniqueCode = data[3].trim();
-            const scanDateTime = new Date().toLocaleString();
-            
-            let studentRecord = scanData.find(record => record.uniqueCode === uniqueCode);
-            if (!studentRecord) {
-                studentRecord = { studentNumber, lastName, firstName, uniqueCode, scanDateTime };
-                scanData.push(studentRecord);
-                localStorage.setItem("scanData", JSON.stringify(scanData));
+            const [studentNumber, lastName, firstName, section, uniqueCode, location] = data.map(item => item.trim());
+            const fullName = `${firstName} ${lastName}`; // Combine first and last name
+
+            // Check if the Unique Code already exists (to prevent duplicate scans)
+            const isDuplicate = scanData.some(entry => entry.uniqueCode === uniqueCode);
+            if (isDuplicate) {
+                document.getElementById("status").textContent = "Duplicate Scan! This QR code has already been used.";
+                document.getElementById("status").style.color = "red";
+                return;
             }
 
+            const scanDate = new Date().toLocaleDateString();
+            const scanTime = new Date().toLocaleTimeString();
+            
+            scanData.push({ studentNumber, fullName, section, uniqueCode, scanDate, scanTime, location });
+            localStorage.setItem("scanData", JSON.stringify(scanData));
             updateTable();
 
             document.getElementById("status").textContent = "QR Code Scanned Successfully!";
@@ -123,29 +127,44 @@
         function updateTable() {
             const tableBody = document.getElementById("scannedData");
             tableBody.innerHTML = "";
-            scanData.forEach(({ studentNumber, lastName, firstName, uniqueCode, scanDateTime }) => {
+            scanData.forEach(({ studentNumber, fullName, section, uniqueCode, scanDate, scanTime, location }) => {
                 const row = `<tr>
                     <td>${studentNumber}</td>
-                    <td>${lastName}</td>
-                    <td>${firstName}</td>
+                    <td>${fullName}</td>
+                    <td>${section}</td>
                     <td>${uniqueCode}</td>
-                    <td>${scanDateTime}</td>
+                    <td>${scanDate}</td>
+                    <td>${scanTime}</td>
+                    <td>${location}</td>
                 </tr>`;
                 tableBody.innerHTML += row;
             });
         }
 
         function downloadCSV() {
-            let csvContent = "data:text/csv;charset=utf-8,Student Number,Last Name,First Name,Unique Code,Scan Date & Time\n";
-            scanData.forEach(({ studentNumber, lastName, firstName, uniqueCode, scanDateTime }) => {
-                csvContent += `${studentNumber},${lastName},${firstName},${uniqueCode},${scanDateTime}\n`;
+            if (scanData.length === 0) {
+                alert("No scan data available to download.");
+                return;
+            }
+
+            let csvContent = "data:text/csv;charset=utf-8,Student Number,Full Name,Section,Unique Code,Scan Date,Scan Time,Location\n";
+            scanData.forEach(({ studentNumber, fullName, section, uniqueCode, scanDate, scanTime, location }) => {
+                csvContent += `${studentNumber},${fullName},${section},${uniqueCode},${scanDate},${scanTime},${location}\n`;
             });
+
             const encodedUri = encodeURI(csvContent);
             const link = document.createElement("a");
             link.setAttribute("href", encodedUri);
             link.setAttribute("download", "attendance.csv");
             document.body.appendChild(link);
             link.click();
+
+            // Clear local storage and reset scanData
+            localStorage.removeItem("scanData");
+            scanData = [];
+            updateTable();
+            document.getElementById("status").textContent = "CSV downloaded. Data cleared.";
+            document.getElementById("status").style.color = "blue";
         }
 
         updateTable();
